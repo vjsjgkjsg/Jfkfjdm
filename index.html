@@ -1,0 +1,843 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI Image Generator</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500&display=swap');
+
+  :root {
+    --bg: #0a0a0f;
+    --surface: #12121a;
+    --card: #1a1a26;
+    --border: #2a2a3a;
+    --accent: #7c3aed;
+    --accent2: #06b6d4;
+    --glow: rgba(124,58,237,0.3);
+    --text: #f0f0ff;
+    --muted: #6b6b8a;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'DM Sans', sans-serif;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* Animated background */
+  body::before {
+    content: '';
+    position: fixed;
+    top: -50%;
+    left: -50%;
+    width: 200%;
+    height: 200%;
+    background: 
+      radial-gradient(ellipse at 20% 20%, rgba(124,58,237,0.12) 0%, transparent 50%),
+      radial-gradient(ellipse at 80% 80%, rgba(6,182,212,0.08) 0%, transparent 50%);
+    animation: bgShift 8s ease-in-out infinite alternate;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  @keyframes bgShift {
+    0% { transform: translate(0,0) rotate(0deg); }
+    100% { transform: translate(2%,2%) rotate(3deg); }
+  }
+
+  .container {
+    position: relative;
+    z-index: 1;
+    max-width: 480px;
+    margin: 0 auto;
+    padding: 16px;
+  }
+
+  /* Header */
+  .header {
+    text-align: center;
+    padding: 20px 0 24px;
+  }
+
+  .logo {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 6px;
+  }
+
+  .logo-icon {
+    width: 40px;
+    height: 40px;
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 20px;
+    box-shadow: 0 0 20px var(--glow);
+  }
+
+  .logo h1 {
+    font-family: 'Syne', sans-serif;
+    font-size: 22px;
+    font-weight: 800;
+    background: linear-gradient(135deg, #fff, var(--accent2));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+
+  .header p {
+    color: var(--muted);
+    font-size: 13px;
+  }
+
+  /* Tabs */
+  .tabs {
+    display: flex;
+    background: var(--surface);
+    border-radius: 14px;
+    padding: 4px;
+    margin-bottom: 20px;
+    border: 1px solid var(--border);
+  }
+
+  .tab {
+    flex: 1;
+    padding: 10px;
+    text-align: center;
+    border-radius: 10px;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--muted);
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+  }
+
+  .tab.active {
+    background: linear-gradient(135deg, var(--accent), #5b21b6);
+    color: white;
+    box-shadow: 0 4px 15px var(--glow);
+  }
+
+  /* Card */
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 20px;
+    margin-bottom: 16px;
+  }
+
+  .card-label {
+    font-family: 'Syne', sans-serif;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 10px;
+  }
+
+  /* Textarea */
+  textarea {
+    width: 100%;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 14px;
+    color: var(--text);
+    font-family: 'DM Sans', sans-serif;
+    font-size: 14px;
+    resize: none;
+    outline: none;
+    transition: border-color 0.2s;
+    line-height: 1.5;
+  }
+
+  textarea:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(124,58,237,0.1);
+  }
+
+  textarea::placeholder { color: var(--muted); }
+
+  /* Style pills */
+  .styles-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .style-pill {
+    padding: 7px 14px;
+    border-radius: 100px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--muted);
+    font-size: 13px;
+    cursor: pointer;
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    white-space: nowrap;
+  }
+
+  .style-pill:hover { border-color: var(--accent); color: var(--text); }
+
+  .style-pill.selected {
+    border-color: var(--accent);
+    background: rgba(124,58,237,0.15);
+    color: white;
+  }
+
+  /* Size selector */
+  .sizes {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+  }
+
+  .size-btn {
+    padding: 10px 6px;
+    border-radius: 12px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--muted);
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.2s;
+    text-align: center;
+  }
+
+  .size-btn .ratio {
+    font-family: 'Syne', sans-serif;
+    font-weight: 700;
+    font-size: 14px;
+    color: var(--text);
+    margin-bottom: 2px;
+  }
+
+  .size-btn.selected {
+    border-color: var(--accent);
+    background: rgba(124,58,237,0.15);
+  }
+
+  /* Photo upload */
+  .upload-area {
+    border: 2px dashed var(--border);
+    border-radius: 16px;
+    padding: 32px 20px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.2s;
+    background: var(--surface);
+  }
+
+  .upload-area:hover, .upload-area.dragover {
+    border-color: var(--accent);
+    background: rgba(124,58,237,0.05);
+  }
+
+  .upload-icon { font-size: 36px; margin-bottom: 8px; }
+  .upload-text { font-size: 14px; color: var(--muted); }
+  .upload-text span { color: var(--accent); font-weight: 500; }
+
+  #fileInput { display: none; }
+
+  .preview-wrap {
+    position: relative;
+    border-radius: 16px;
+    overflow: hidden;
+    display: none;
+  }
+
+  .preview-wrap img {
+    width: 100%;
+    border-radius: 16px;
+    display: block;
+  }
+
+  .preview-remove {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    width: 30px;
+    height: 30px;
+    background: rgba(0,0,0,0.7);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    font-size: 14px;
+    border: none;
+    color: white;
+  }
+
+  /* Strength slider */
+  .slider-wrap { padding: 4px 0; }
+
+  input[type=range] {
+    width: 100%;
+    height: 4px;
+    border-radius: 4px;
+    background: var(--border);
+    outline: none;
+    -webkit-appearance: none;
+    margin: 8px 0;
+  }
+
+  input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    cursor: pointer;
+    box-shadow: 0 0 8px var(--glow);
+  }
+
+  .slider-labels {
+    display: flex;
+    justify-content: space-between;
+    font-size: 11px;
+    color: var(--muted);
+  }
+
+  /* Generate button */
+  .btn-generate {
+    width: 100%;
+    padding: 18px;
+    border-radius: 16px;
+    border: none;
+    background: linear-gradient(135deg, var(--accent), #5b21b6);
+    color: white;
+    font-family: 'Syne', sans-serif;
+    font-size: 16px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.3s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    box-shadow: 0 8px 30px var(--glow);
+    margin-bottom: 20px;
+    letter-spacing: 0.5px;
+  }
+
+  .btn-generate:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 12px 40px var(--glow);
+  }
+
+  .btn-generate:active { transform: scale(0.98); }
+  .btn-generate:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    transform: none;
+  }
+
+  /* Loading */
+  .loading {
+    display: none;
+    text-align: center;
+    padding: 40px 20px;
+  }
+
+  .spinner {
+    width: 60px;
+    height: 60px;
+    border-radius: 50%;
+    border: 3px solid var(--border);
+    border-top-color: var(--accent);
+    border-right-color: var(--accent2);
+    animation: spin 1s linear infinite;
+    margin: 0 auto 16px;
+  }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .loading-text {
+    font-family: 'Syne', sans-serif;
+    font-size: 15px;
+    font-weight: 600;
+    margin-bottom: 6px;
+  }
+
+  .loading-sub { color: var(--muted); font-size: 13px; }
+
+  .progress-dots {
+    display: flex;
+    justify-content: center;
+    gap: 6px;
+    margin-top: 16px;
+  }
+
+  .dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--accent);
+    animation: pulse 1.4s ease-in-out infinite;
+  }
+
+  .dot:nth-child(2) { animation-delay: 0.2s; }
+  .dot:nth-child(3) { animation-delay: 0.4s; }
+
+  @keyframes pulse {
+    0%, 80%, 100% { transform: scale(0.6); opacity: 0.4; }
+    40% { transform: scale(1); opacity: 1; }
+  }
+
+  /* Result */
+  .result {
+    display: none;
+  }
+
+  .result-img-wrap {
+    border-radius: 20px;
+    overflow: hidden;
+    position: relative;
+    margin-bottom: 14px;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+  }
+
+  .result-img-wrap img {
+    width: 100%;
+    display: block;
+    animation: fadeIn 0.5s ease;
+  }
+
+  @keyframes fadeIn { from { opacity: 0; transform: scale(0.98); } to { opacity: 1; transform: scale(1); } }
+
+  .result-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-bottom: 12px;
+  }
+
+  .btn-action {
+    padding: 13px;
+    border-radius: 12px;
+    border: 1px solid var(--border);
+    background: var(--card);
+    color: var(--text);
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+  }
+
+  .btn-action:hover { border-color: var(--accent); background: rgba(124,58,237,0.1); }
+
+  .btn-action.primary {
+    background: linear-gradient(135deg, var(--accent), #5b21b6);
+    border-color: transparent;
+    box-shadow: 0 4px 15px var(--glow);
+  }
+
+  .btn-new {
+    width: 100%;
+    padding: 13px;
+    border-radius: 12px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--muted);
+    font-size: 14px;
+    cursor: pointer;
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+  }
+
+  .btn-new:hover { color: var(--text); border-color: var(--accent); }
+
+  /* Error */
+  .error-msg {
+    display: none;
+    background: rgba(239,68,68,0.1);
+    border: 1px solid rgba(239,68,68,0.3);
+    border-radius: 12px;
+    padding: 14px;
+    color: #fca5a5;
+    font-size: 14px;
+    text-align: center;
+    margin-bottom: 14px;
+  }
+
+  /* Section tabs */
+  .panel { display: none; }
+  .panel.active { display: block; }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <!-- Header -->
+  <div class="header">
+    <div class="logo">
+      <div class="logo-icon">✦</div>
+      <h1>ImageAI</h1>
+    </div>
+    <p>Генерация изображений · Бесплатно</p>
+  </div>
+
+  <!-- Tabs -->
+  <div class="tabs">
+    <div class="tab active" onclick="switchTab('text')">
+      ✦ По тексту
+    </div>
+    <div class="tab" onclick="switchTab('photo')">
+      🖼 Из фото
+    </div>
+  </div>
+
+  <!-- TEXT TO IMAGE PANEL -->
+  <div id="panel-text" class="panel active">
+
+    <div class="card">
+      <div class="card-label">Описание</div>
+      <textarea id="promptText" rows="4" placeholder="Опиши что хочешь увидеть... например: красивый закат над горами, 4k, cinematic"></textarea>
+    </div>
+
+    <div class="card">
+      <div class="card-label">Стиль</div>
+      <div class="styles-grid">
+        <div class="style-pill selected" data-style="" onclick="selectStyle(this)">✨ Авто</div>
+        <div class="style-pill" data-style="photorealistic, RAW photo, 8k, DSLR" onclick="selectStyle(this)">📷 Фото</div>
+        <div class="style-pill" data-style="anime style, manga, vibrant colors" onclick="selectStyle(this)">🎌 Аниме</div>
+        <div class="style-pill" data-style="digital art, concept art, artstation" onclick="selectStyle(this)">🎨 Арт</div>
+        <div class="style-pill" data-style="oil painting, impressionist, painterly" onclick="selectStyle(this)">🖌 Живопись</div>
+        <div class="style-pill" data-style="cyberpunk, neon lights, futuristic" onclick="selectStyle(this)">🌆 Киберпанк</div>
+        <div class="style-pill" data-style="fantasy art, magical, ethereal, epic" onclick="selectStyle(this)">🧙 Фэнтези</div>
+        <div class="style-pill" data-style="3d render, octane, cinema4d, volumetric" onclick="selectStyle(this)">🔷 3D</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-label">Размер</div>
+      <div class="sizes">
+        <div class="size-btn selected" data-w="512" data-h="512" onclick="selectSize(this)">
+          <div class="ratio">1:1</div>
+          <div>Квадрат</div>
+        </div>
+        <div class="size-btn" data-w="512" data-h="768" onclick="selectSize(this)">
+          <div class="ratio">2:3</div>
+          <div>Портрет</div>
+        </div>
+        <div class="size-btn" data-w="768" data-h="512" onclick="selectSize(this)">
+          <div class="ratio">3:2</div>
+          <div>Пейзаж</div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- PHOTO TO IMAGE PANEL -->
+  <div id="panel-photo" class="panel">
+
+    <div class="card">
+      <div class="card-label">Твоё фото</div>
+      <div class="upload-area" id="uploadArea" onclick="document.getElementById('fileInput').click()">
+        <div class="upload-icon">📸</div>
+        <div class="upload-text">Нажми чтобы выбрать фото<br><span>или перетащи сюда</span></div>
+      </div>
+      <div class="preview-wrap" id="previewWrap">
+        <img id="previewImg" src="" alt="">
+        <button class="preview-remove" onclick="removePhoto()">✕</button>
+      </div>
+      <input type="file" id="fileInput" accept="image/*" onchange="handleFile(this)">
+    </div>
+
+    <div class="card">
+      <div class="card-label">Что изменить</div>
+      <textarea id="promptPhoto" rows="3" placeholder="Опиши изменения... например: сделай в стиле аниме, добавь снег"></textarea>
+    </div>
+
+    <div class="card">
+      <div class="card-label">Стиль</div>
+      <div class="styles-grid">
+        <div class="style-pill selected" data-style="" onclick="selectStyle(this)">✨ Авто</div>
+        <div class="style-pill" data-style="photorealistic, RAW photo, 8k" onclick="selectStyle(this)">📷 Фото</div>
+        <div class="style-pill" data-style="anime style, manga" onclick="selectStyle(this)">🎌 Аниме</div>
+        <div class="style-pill" data-style="digital art, concept art" onclick="selectStyle(this)">🎨 Арт</div>
+        <div class="style-pill" data-style="oil painting, painterly" onclick="selectStyle(this)">🖌 Живопись</div>
+        <div class="style-pill" data-style="cyberpunk, neon lights" onclick="selectStyle(this)">🌆 Киберпанк</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-label">Сила изменений</div>
+      <div class="slider-wrap">
+        <input type="range" id="strength" min="1" max="10" value="6">
+        <div class="slider-labels">
+          <span>Мягко</span>
+          <span id="strengthVal">6</span>
+          <span>Сильно</span>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Generate Button -->
+  <button class="btn-generate" id="btnGenerate" onclick="generate()">
+    <span>✦</span>
+    <span>Сгенерировать</span>
+  </button>
+
+  <!-- Loading -->
+  <div class="loading" id="loading">
+    <div class="spinner"></div>
+    <div class="loading-text">Создаю шедевр...</div>
+    <div class="loading-sub">Обычно 5–15 секунд</div>
+    <div class="progress-dots">
+      <div class="dot"></div>
+      <div class="dot"></div>
+      <div class="dot"></div>
+    </div>
+  </div>
+
+  <!-- Error -->
+  <div class="error-msg" id="errorMsg"></div>
+
+  <!-- Result -->
+  <div class="result" id="result">
+    <div class="result-img-wrap">
+      <img id="resultImg" src="" alt="Generated">
+    </div>
+    <div class="result-actions">
+      <button class="btn-action primary" onclick="sendToChat()">📤 В чат</button>
+      <button class="btn-action" onclick="downloadImg()">⬇️ Скачать</button>
+    </div>
+    <button class="btn-new" onclick="resetResult()">🔄 Создать ещё</button>
+  </div>
+
+</div>
+
+<script>
+  // Init Telegram WebApp
+  const tg = window.Telegram?.WebApp;
+  if (tg) {
+    tg.ready();
+    tg.expand();
+  }
+
+  let currentTab = 'text';
+  let selectedStyle = '';
+  let selectedW = 512;
+  let selectedH = 512;
+  let uploadedFile = null;
+  let lastImageUrl = '';
+
+  // --- Tab switch ---
+  function switchTab(tab) {
+    currentTab = tab;
+    document.querySelectorAll('.tab').forEach((t, i) => {
+      t.classList.toggle('active', (i === 0 && tab === 'text') || (i === 1 && tab === 'photo'));
+    });
+    document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+    document.getElementById('panel-' + tab).classList.add('active');
+    resetResult();
+  }
+
+  // --- Style select ---
+  function selectStyle(el) {
+    el.closest('.styles-grid').querySelectorAll('.style-pill').forEach(p => p.classList.remove('selected'));
+    el.classList.add('selected');
+    selectedStyle = el.dataset.style;
+  }
+
+  // --- Size select ---
+  function selectSize(el) {
+    document.querySelectorAll('.size-btn').forEach(b => b.classList.remove('selected'));
+    el.classList.add('selected');
+    selectedW = parseInt(el.dataset.w);
+    selectedH = parseInt(el.dataset.h);
+  }
+
+  // --- Strength slider ---
+  document.getElementById('strength').addEventListener('input', function() {
+    document.getElementById('strengthVal').textContent = this.value;
+  });
+
+  // --- File upload ---
+  function handleFile(input) {
+    const file = input.files[0];
+    if (!file) return;
+    uploadedFile = file;
+    const url = URL.createObjectURL(file);
+    document.getElementById('previewImg').src = url;
+    document.getElementById('previewWrap').style.display = 'block';
+    document.getElementById('uploadArea').style.display = 'none';
+  }
+
+  function removePhoto() {
+    uploadedFile = null;
+    document.getElementById('previewWrap').style.display = 'none';
+    document.getElementById('uploadArea').style.display = 'block';
+    document.getElementById('fileInput').value = '';
+  }
+
+  // Drag & drop
+  const ua = document.getElementById('uploadArea');
+  ua.addEventListener('dragover', e => { e.preventDefault(); ua.classList.add('dragover'); });
+  ua.addEventListener('dragleave', () => ua.classList.remove('dragover'));
+  ua.addEventListener('drop', e => {
+    e.preventDefault();
+    ua.classList.remove('dragover');
+    const file = e.dataTransfer.files[0];
+    if (file && file.type.startsWith('image/')) {
+      uploadedFile = file;
+      const url = URL.createObjectURL(file);
+      document.getElementById('previewImg').src = url;
+      document.getElementById('previewWrap').style.display = 'block';
+      document.getElementById('uploadArea').style.display = 'none';
+    }
+  });
+
+  // --- Generate ---
+  async function generate() {
+    const prompt = currentTab === 'text'
+      ? document.getElementById('promptText').value.trim()
+      : document.getElementById('promptPhoto').value.trim();
+
+    if (!prompt || prompt.length < 2) {
+      showError('Введи описание что хочешь получить!');
+      return;
+    }
+
+    if (currentTab === 'photo' && !uploadedFile) {
+      showError('Загрузи фото!');
+      return;
+    }
+
+    showLoading(true);
+
+    try {
+      let imageUrl;
+
+      if (currentTab === 'photo') {
+        // img2img через pollinations — конвертируем в base64 и используем как seed
+        const b64 = await fileToBase64(uploadedFile);
+        const fullPrompt = buildPrompt(prompt);
+        // Pollinations img2img через image parameter
+        const seed = Math.floor(Math.random() * 999999);
+        imageUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(fullPrompt)}?width=${selectedW}&height=${selectedH}&seed=${seed}&model=flux&nologo=true&image=${encodeURIComponent(b64)}`;
+      } else {
+        const fullPrompt = buildPrompt(prompt);
+        const seed = Math.floor(Math.random() * 999999);
+        imageUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(fullPrompt)}?width=${selectedW}&height=${selectedH}&seed=${seed}&model=flux&nologo=true`;
+      }
+
+      // Load image
+      await loadImage(imageUrl);
+      lastImageUrl = imageUrl;
+      showResult(imageUrl);
+
+    } catch (e) {
+      showError('Не удалось сгенерировать. Попробуй ещё раз или измени промпт.');
+    } finally {
+      showLoading(false);
+    }
+  }
+
+  function buildPrompt(base) {
+    let parts = [base];
+    if (selectedStyle) parts.push(selectedStyle);
+    parts.push('high quality, detailed');
+    return parts.join(', ');
+  }
+
+  function loadImage(url) {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.onload = resolve;
+      img.onerror = reject;
+      img.src = url;
+      setTimeout(() => reject(new Error('timeout')), 60000);
+    });
+  }
+
+  async function fileToBase64(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = e => resolve(e.target.result);
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  }
+
+  // --- UI states ---
+  function showLoading(show) {
+    document.getElementById('loading').style.display = show ? 'block' : 'none';
+    document.getElementById('btnGenerate').style.display = show ? 'none' : 'flex';
+    document.getElementById('errorMsg').style.display = 'none';
+    if (show) document.getElementById('result').style.display = 'none';
+  }
+
+  function showResult(url) {
+    document.getElementById('resultImg').src = url;
+    document.getElementById('result').style.display = 'block';
+    document.getElementById('result').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+
+  function showError(msg) {
+    const el = document.getElementById('errorMsg');
+    el.textContent = '⚠️ ' + msg;
+    el.style.display = 'block';
+    setTimeout(() => el.style.display = 'none', 4000);
+  }
+
+  function resetResult() {
+    document.getElementById('result').style.display = 'none';
+    document.getElementById('errorMsg').style.display = 'none';
+    document.getElementById('btnGenerate').style.display = 'flex';
+  }
+
+  // --- Actions ---
+  function sendToChat() {
+    if (tg && lastImageUrl) {
+      tg.sendData(JSON.stringify({ action: 'image_ready', url: lastImageUrl }));
+    } else {
+      window.open(lastImageUrl, '_blank');
+    }
+  }
+
+  function downloadImg() {
+    const a = document.createElement('a');
+    a.href = lastImageUrl;
+    a.download = 'ai-image.jpg';
+    a.target = '_blank';
+    a.click();
+  }
+</script>
+</body>
+</html>
