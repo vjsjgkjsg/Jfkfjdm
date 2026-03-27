@@ -1,0 +1,2420 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"/>
+<title>AI Image Studio</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:ital,wght@0,400;0,700;1,400&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet"/>
+<style>
+  :root {
+    --bg: #09090f;
+    --surface: #111118;
+    --surface2: #18181f;
+    --surface3: #1f1f2e;
+    --border: rgba(255,255,255,0.07);
+    --border-active: rgba(138,101,255,0.6);
+    --accent: #8a65ff;
+    --accent2: #ff6584;
+    --accent3: #00e5ff;
+    --accent-glow: rgba(138,101,255,0.25);
+    --text: #f0eeff;
+    --text2: #9d9ab5;
+    --text3: #5a5875;
+    --success: #00e5a0;
+    --warning: #ffb347;
+    --error: #ff4d6d;
+    --radius: 16px;
+    --radius-sm: 10px;
+    --font-head: 'Syne', sans-serif;
+    --font-mono: 'Space Mono', monospace;
+    --transition: all 0.25s cubic-bezier(0.4,0,0.2,1);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+
+  html, body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-mono);
+    font-size: 14px;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* ─── NOISE OVERLAY ─── */
+  body::before {
+    content: '';
+    position: fixed; inset: 0; z-index: 0;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.04'/%3E%3C/svg%3E");
+    pointer-events: none;
+  }
+
+  /* ─── AMBIENT GLOW ─── */
+  .ambient {
+    position: fixed;
+    border-radius: 50%;
+    filter: blur(80px);
+    pointer-events: none;
+    z-index: 0;
+    opacity: 0.18;
+  }
+  .ambient-1 { width: 400px; height: 400px; background: var(--accent); top: -100px; right: -80px; }
+  .ambient-2 { width: 300px; height: 300px; background: var(--accent2); bottom: 100px; left: -80px; }
+  .ambient-3 { width: 200px; height: 200px; background: var(--accent3); top: 40%; right: 10%; opacity: 0.08; }
+
+  #app {
+    position: relative;
+    z-index: 1;
+    max-width: 480px;
+    margin: 0 auto;
+    padding: 0 0 80px 0;
+    min-height: 100vh;
+  }
+
+  /* ─── HEADER ─── */
+  .header {
+    padding: 20px 20px 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 1px solid var(--border);
+    position: sticky;
+    top: 0;
+    background: rgba(9,9,15,0.85);
+    backdrop-filter: blur(20px);
+    z-index: 100;
+  }
+  .logo {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .logo-icon {
+    width: 36px; height: 36px;
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    border-radius: 10px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 18px;
+    box-shadow: 0 0 20px var(--accent-glow);
+    animation: pulse-logo 3s ease-in-out infinite;
+  }
+  @keyframes pulse-logo {
+    0%,100% { box-shadow: 0 0 20px var(--accent-glow); }
+    50% { box-shadow: 0 0 35px rgba(138,101,255,0.45); }
+  }
+  .logo-text {
+    font-family: var(--font-head);
+    font-weight: 800;
+    font-size: 18px;
+    background: linear-gradient(90deg, var(--accent), var(--accent3));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    letter-spacing: -0.5px;
+  }
+  .credits-badge {
+    font-size: 11px;
+    color: var(--text2);
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 4px 10px;
+    display: flex; align-items: center; gap: 5px;
+  }
+  .credits-dot { width: 6px; height: 6px; background: var(--success); border-radius: 50%; animation: blink 2s infinite; }
+  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.3} }
+
+  /* ─── TABS ─── */
+  .tabs {
+    display: flex;
+    padding: 12px 16px;
+    gap: 6px;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .tabs::-webkit-scrollbar { display: none; }
+  .tab {
+    flex-shrink: 0;
+    padding: 7px 14px;
+    border-radius: 20px;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--text3);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    cursor: pointer;
+    transition: var(--transition);
+    white-space: nowrap;
+  }
+  .tab.active {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+    box-shadow: 0 0 16px var(--accent-glow);
+  }
+  .tab:hover:not(.active) {
+    border-color: var(--border-active);
+    color: var(--text2);
+  }
+
+  /* ─── MAIN CONTENT ─── */
+  .section { display: none; padding: 0 16px; }
+  .section.active { display: block; }
+
+  /* ─── GENERATE SECTION ─── */
+  .gen-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 18px;
+    margin-bottom: 12px;
+    transition: var(--transition);
+  }
+  .gen-card:hover { border-color: rgba(138,101,255,0.2); }
+
+  .card-label {
+    font-size: 11px;
+    color: var(--accent);
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    margin-bottom: 12px;
+    font-family: var(--font-head);
+    font-weight: 600;
+  }
+
+  /* ─── PROMPT ─── */
+  .prompt-wrap {
+    position: relative;
+  }
+  .prompt-textarea {
+    width: 100%;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text);
+    font-family: var(--font-mono);
+    font-size: 13px;
+    line-height: 1.6;
+    padding: 14px;
+    resize: none;
+    min-height: 90px;
+    transition: var(--transition);
+    outline: none;
+  }
+  .prompt-textarea::placeholder { color: var(--text3); }
+  .prompt-textarea:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-glow);
+  }
+  .prompt-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 8px;
+  }
+  .btn-enhance {
+    flex: 1;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text2);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    padding: 8px;
+    cursor: pointer;
+    transition: var(--transition);
+    display: flex; align-items: center; justify-content: center; gap: 5px;
+  }
+  .btn-enhance:hover { border-color: var(--accent); color: var(--accent); }
+  .btn-clear {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text3);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    padding: 8px 12px;
+    cursor: pointer;
+    transition: var(--transition);
+  }
+  .btn-clear:hover { border-color: var(--error); color: var(--error); }
+
+  /* ─── IMG UPLOAD ─── */
+  .upload-zone {
+    border: 2px dashed var(--border);
+    border-radius: var(--radius-sm);
+    padding: 20px;
+    text-align: center;
+    cursor: pointer;
+    transition: var(--transition);
+    position: relative;
+    overflow: hidden;
+  }
+  .upload-zone:hover, .upload-zone.dragover {
+    border-color: var(--accent);
+    background: var(--accent-glow);
+  }
+  .upload-zone input[type="file"] {
+    position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%;
+  }
+  .upload-icon { font-size: 28px; margin-bottom: 8px; }
+  .upload-text { color: var(--text2); font-size: 12px; }
+  .upload-preview {
+    position: relative;
+    border-radius: var(--radius-sm);
+    overflow: hidden;
+    margin-top: 0;
+  }
+  .upload-preview img {
+    width: 100%; max-height: 180px; object-fit: cover; border-radius: var(--radius-sm);
+    display: block;
+  }
+  .upload-preview .remove-img {
+    position: absolute; top: 8px; right: 8px;
+    background: rgba(0,0,0,0.7);
+    border: 1px solid rgba(255,255,255,0.2);
+    border-radius: 50%;
+    width: 28px; height: 28px;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer; color: #fff; font-size: 14px;
+    transition: var(--transition);
+  }
+  .upload-preview .remove-img:hover { background: var(--error); }
+
+  /* ─── STYLES GRID ─── */
+  .styles-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+  }
+  .style-item {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 10px 6px;
+    cursor: pointer;
+    text-align: center;
+    transition: var(--transition);
+    position: relative;
+    overflow: hidden;
+  }
+  .style-item::before {
+    content: '';
+    position: absolute; inset: 0;
+    background: var(--accent);
+    opacity: 0;
+    transition: var(--transition);
+  }
+  .style-item.selected {
+    border-color: var(--accent);
+    box-shadow: 0 0 12px var(--accent-glow);
+  }
+  .style-item.selected::before { opacity: 0.1; }
+  .style-item:hover:not(.selected) { border-color: rgba(138,101,255,0.3); }
+  .style-emoji { font-size: 22px; margin-bottom: 4px; position: relative; }
+  .style-name { font-size: 10px; color: var(--text2); letter-spacing: 0.5px; position: relative; }
+  .style-item.selected .style-name { color: var(--accent); }
+
+  /* ─── ADVANCED SETTINGS ─── */
+  .settings-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    cursor: pointer;
+    padding: 10px 0;
+    color: var(--text2);
+    font-size: 12px;
+    user-select: none;
+    transition: var(--transition);
+  }
+  .settings-toggle:hover { color: var(--text); }
+  .toggle-arrow { transition: transform 0.25s; font-size: 10px; }
+  .toggle-arrow.open { transform: rotate(180deg); }
+  .settings-body { display: none; padding-top: 12px; }
+  .settings-body.open { display: block; }
+
+  .param-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 14px;
+    gap: 12px;
+  }
+  .param-label {
+    font-size: 12px;
+    color: var(--text2);
+    flex-shrink: 0;
+    min-width: 80px;
+  }
+  .param-val {
+    font-size: 12px;
+    color: var(--accent);
+    flex-shrink: 0;
+    min-width: 36px;
+    text-align: right;
+    font-family: var(--font-mono);
+  }
+  .slider {
+    flex: 1;
+    -webkit-appearance: none;
+    appearance: none;
+    height: 4px;
+    background: var(--surface3);
+    border-radius: 2px;
+    outline: none;
+  }
+  .slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 16px; height: 16px;
+    border-radius: 50%;
+    background: var(--accent);
+    cursor: pointer;
+    box-shadow: 0 0 8px var(--accent-glow);
+    transition: var(--transition);
+  }
+  .slider::-webkit-slider-thumb:hover { transform: scale(1.2); }
+
+  .size-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 6px;
+  }
+  .size-btn {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text2);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    padding: 7px 4px;
+    cursor: pointer;
+    text-align: center;
+    transition: var(--transition);
+  }
+  .size-btn.selected {
+    border-color: var(--accent);
+    color: var(--accent);
+    background: var(--accent-glow);
+  }
+  .size-btn:hover:not(.selected) { border-color: rgba(138,101,255,0.3); }
+
+  .model-select {
+    width: 100%;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    padding: 10px 12px;
+    outline: none;
+    cursor: pointer;
+    transition: var(--transition);
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%239d9ab5'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 12px center;
+  }
+  .model-select:focus { border-color: var(--accent); }
+
+  /* ─── NEGATIVE PROMPT ─── */
+  .neg-textarea {
+    width: 100%;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text2);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    padding: 10px 12px;
+    resize: none;
+    min-height: 60px;
+    outline: none;
+    transition: var(--transition);
+  }
+  .neg-textarea::placeholder { color: var(--text3); }
+  .neg-textarea:focus { border-color: rgba(255,101,132,0.5); }
+
+  /* ─── GENERATE BUTTON ─── */
+  .btn-generate {
+    width: 100%;
+    padding: 18px;
+    background: linear-gradient(135deg, var(--accent), #6e3eff);
+    border: none;
+    border-radius: var(--radius);
+    color: #fff;
+    font-family: var(--font-head);
+    font-weight: 700;
+    font-size: 16px;
+    letter-spacing: 0.5px;
+    cursor: pointer;
+    transition: var(--transition);
+    position: relative;
+    overflow: hidden;
+    margin-top: 4px;
+    box-shadow: 0 4px 30px var(--accent-glow);
+  }
+  .btn-generate::before {
+    content: '';
+    position: absolute; inset: 0;
+    background: linear-gradient(135deg, rgba(255,255,255,0.1), transparent);
+    opacity: 0;
+    transition: var(--transition);
+  }
+  .btn-generate:hover:not(:disabled)::before { opacity: 1; }
+  .btn-generate:hover:not(:disabled) {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 40px var(--accent-glow);
+  }
+  .btn-generate:active:not(:disabled) { transform: translateY(0); }
+  .btn-generate:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    transform: none;
+  }
+  .btn-generate .btn-shimmer {
+    position: absolute; inset: 0;
+    background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.15) 50%, transparent 100%);
+    transform: translateX(-100%);
+    animation: shimmer 2s infinite;
+  }
+  @keyframes shimmer { to { transform: translateX(200%); } }
+
+  /* ─── PROGRESS / LOADING ─── */
+  .progress-card {
+    background: var(--surface);
+    border: 1px solid var(--border-active);
+    border-radius: var(--radius);
+    padding: 24px;
+    text-align: center;
+    margin-bottom: 12px;
+    display: none;
+    box-shadow: 0 0 30px var(--accent-glow);
+    animation: fadeIn 0.3s ease;
+  }
+  .progress-card.visible { display: block; }
+  @keyframes fadeIn { from { opacity:0; transform: translateY(10px); } to { opacity:1; transform: translateY(0); } }
+  .progress-spinner {
+    width: 56px; height: 56px;
+    margin: 0 auto 16px;
+    position: relative;
+  }
+  .progress-spinner svg { animation: spin 1.2s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .progress-spinner svg circle {
+    fill: none;
+    stroke: var(--accent);
+    stroke-width: 3;
+    stroke-linecap: round;
+    stroke-dasharray: 120;
+    stroke-dashoffset: 80;
+  }
+  .progress-title {
+    font-family: var(--font-head);
+    font-weight: 700;
+    font-size: 16px;
+    margin-bottom: 6px;
+    color: var(--text);
+  }
+  .progress-sub {
+    color: var(--text3);
+    font-size: 12px;
+    margin-bottom: 16px;
+  }
+  .progress-bar-wrap {
+    background: var(--surface2);
+    border-radius: 4px;
+    height: 6px;
+    overflow: hidden;
+    margin-bottom: 10px;
+  }
+  .progress-bar {
+    height: 100%;
+    background: linear-gradient(90deg, var(--accent), var(--accent3));
+    border-radius: 4px;
+    width: 0%;
+    transition: width 0.4s ease;
+    box-shadow: 0 0 10px var(--accent);
+  }
+  .progress-steps {
+    display: flex;
+    justify-content: space-between;
+    font-size: 10px;
+    color: var(--text3);
+  }
+  .progress-steps span.done { color: var(--success); }
+
+  /* ─── RESULT ─── */
+  .result-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+    margin-bottom: 12px;
+    display: none;
+    animation: fadeIn 0.4s ease;
+  }
+  .result-card.visible { display: block; }
+  .result-img-wrap {
+    position: relative;
+    width: 100%;
+    background: var(--surface2);
+    min-height: 200px;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .result-img {
+    width: 100%;
+    display: block;
+    border-radius: 0;
+  }
+  .result-img-overlay {
+    position: absolute; inset: 0;
+    background: linear-gradient(to bottom, transparent 60%, rgba(9,9,15,0.8) 100%);
+  }
+  .result-meta {
+    position: absolute;
+    bottom: 12px; left: 12px;
+    display: flex; gap: 6px;
+  }
+  .result-badge {
+    font-size: 10px;
+    background: rgba(0,0,0,0.6);
+    backdrop-filter: blur(8px);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 20px;
+    padding: 3px 8px;
+    color: var(--text2);
+  }
+  .result-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 1px;
+    background: var(--border);
+  }
+  .result-btn {
+    background: var(--surface);
+    border: none;
+    color: var(--text2);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    padding: 14px 10px;
+    cursor: pointer;
+    display: flex; flex-direction: column; align-items: center; gap: 4px;
+    transition: var(--transition);
+  }
+  .result-btn:hover { background: var(--surface2); color: var(--text); }
+  .result-btn:active { background: var(--surface3); }
+  .result-btn-icon { font-size: 18px; }
+  .result-btn.share { color: var(--accent3); }
+  .result-btn.share:hover { background: rgba(0,229,255,0.08); }
+  .result-btn.download { color: var(--success); }
+  .result-btn.download:hover { background: rgba(0,229,160,0.08); }
+  .result-btn.retry { color: var(--accent2); }
+  .result-btn.retry:hover { background: rgba(255,101,132,0.08); }
+
+  /* ─── VARIATIONS ─── */
+  .variations-section {
+    margin-bottom: 12px;
+    display: none;
+  }
+  .variations-section.visible { display: block; }
+  .variations-title {
+    font-size: 11px;
+    color: var(--text3);
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    margin-bottom: 10px;
+    padding: 0 2px;
+  }
+  .variations-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 6px;
+  }
+  .variation-thumb {
+    aspect-ratio: 1;
+    border-radius: 10px;
+    overflow: hidden;
+    cursor: pointer;
+    border: 2px solid transparent;
+    transition: var(--transition);
+    background: var(--surface2);
+  }
+  .variation-thumb img { width: 100%; height: 100%; object-fit: cover; }
+  .variation-thumb:hover { border-color: var(--accent); transform: scale(1.03); }
+  .variation-thumb.selected { border-color: var(--accent); box-shadow: 0 0 12px var(--accent-glow); }
+  .variation-thumb.loading {
+    display: flex; align-items: center; justify-content: center;
+    font-size: 20px; color: var(--text3);
+    animation: pulse-var 1.5s ease-in-out infinite;
+  }
+  @keyframes pulse-var { 0%,100%{opacity:0.4} 50%{opacity:0.9} }
+
+  /* ─── HISTORY ─── */
+  .history-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 0 10px;
+  }
+  .history-title {
+    font-family: var(--font-head);
+    font-weight: 700;
+    font-size: 16px;
+  }
+  .btn-clear-history {
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    color: var(--text3);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    padding: 5px 10px;
+    cursor: pointer;
+    transition: var(--transition);
+  }
+  .btn-clear-history:hover { border-color: var(--error); color: var(--error); }
+  .history-empty {
+    text-align: center;
+    padding: 60px 0;
+    color: var(--text3);
+  }
+  .history-empty-icon { font-size: 40px; margin-bottom: 12px; }
+  .history-empty-text { font-size: 14px; }
+  .history-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    padding-bottom: 20px;
+  }
+  .history-item {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    overflow: hidden;
+    cursor: pointer;
+    transition: var(--transition);
+    position: relative;
+  }
+  .history-item:hover { border-color: var(--accent); transform: translateY(-2px); }
+  .history-item-img {
+    width: 100%;
+    aspect-ratio: 1;
+    object-fit: cover;
+    background: var(--surface2);
+    display: block;
+  }
+  .history-item-info {
+    padding: 8px;
+  }
+  .history-item-prompt {
+    font-size: 11px;
+    color: var(--text2);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    line-height: 1.4;
+  }
+  .history-item-time {
+    font-size: 10px;
+    color: var(--text3);
+    margin-top: 3px;
+  }
+  .history-item-style {
+    position: absolute;
+    top: 6px; right: 6px;
+    background: rgba(0,0,0,0.6);
+    backdrop-filter: blur(4px);
+    border-radius: 20px;
+    padding: 2px 6px;
+    font-size: 10px;
+    color: var(--text2);
+  }
+  .history-item-actions {
+    position: absolute;
+    top: 6px; left: 6px;
+    display: flex; gap: 4px;
+    opacity: 0;
+    transition: var(--transition);
+  }
+  .history-item:hover .history-item-actions { opacity: 1; }
+  .history-action-btn {
+    background: rgba(0,0,0,0.7);
+    border: none;
+    border-radius: 6px;
+    padding: 4px 6px;
+    cursor: pointer;
+    font-size: 12px;
+    transition: var(--transition);
+  }
+  .history-action-btn:hover { background: var(--accent); }
+
+  /* ─── MODAL ─── */
+  .modal-overlay {
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,0.85);
+    backdrop-filter: blur(10px);
+    z-index: 1000;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+  }
+  .modal-overlay.open { display: flex; animation: fadeIn 0.2s ease; }
+  .modal {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    width: 100%;
+    max-width: 400px;
+    overflow: hidden;
+    max-height: 90vh;
+    overflow-y: auto;
+  }
+  .modal-img-full {
+    width: 100%;
+    display: block;
+  }
+  .modal-info {
+    padding: 16px;
+  }
+  .modal-prompt {
+    font-size: 13px;
+    color: var(--text2);
+    line-height: 1.6;
+    margin-bottom: 12px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--border);
+  }
+  .modal-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 12px;
+  }
+  .modal-tag {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 3px 10px;
+    font-size: 11px;
+    color: var(--text2);
+  }
+  .modal-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+  .modal-btn {
+    padding: 12px;
+    border-radius: var(--radius-sm);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    cursor: pointer;
+    border: 1px solid var(--border);
+    background: var(--surface2);
+    color: var(--text2);
+    transition: var(--transition);
+    display: flex; align-items: center; justify-content: center; gap: 6px;
+  }
+  .modal-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .modal-btn.primary {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+  }
+  .modal-btn.primary:hover { background: #7a55ef; }
+  .modal-close {
+    position: absolute;
+    top: 16px; right: 16px;
+    background: rgba(0,0,0,0.6);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 50%;
+    width: 32px; height: 32px;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer;
+    color: #fff;
+    font-size: 16px;
+    transition: var(--transition);
+    z-index: 10;
+  }
+  .modal-close:hover { background: var(--error); }
+
+  /* ─── SETTINGS SECTION ─── */
+  .settings-section { padding: 14px 0; }
+  .settings-group {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+    margin-bottom: 12px;
+  }
+  .settings-group-title {
+    padding: 14px 16px;
+    font-size: 11px;
+    color: var(--text3);
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    border-bottom: 1px solid var(--border);
+    font-family: var(--font-head);
+    font-weight: 600;
+  }
+  .settings-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--border);
+    transition: var(--transition);
+  }
+  .settings-row:last-child { border-bottom: none; }
+  .settings-row:hover { background: var(--surface2); }
+  .settings-row-label { font-size: 13px; color: var(--text); }
+  .settings-row-sub { font-size: 11px; color: var(--text3); margin-top: 2px; }
+  .settings-row-val { font-size: 12px; color: var(--accent); font-family: var(--font-mono); }
+  .toggle-switch {
+    width: 44px; height: 24px;
+    background: var(--surface3);
+    border-radius: 12px;
+    position: relative;
+    cursor: pointer;
+    transition: var(--transition);
+    flex-shrink: 0;
+    border: 1px solid var(--border);
+  }
+  .toggle-switch.on { background: var(--accent); border-color: var(--accent); }
+  .toggle-switch::after {
+    content: '';
+    position: absolute;
+    width: 18px; height: 18px;
+    background: #fff;
+    border-radius: 50%;
+    top: 2px; left: 2px;
+    transition: var(--transition);
+    box-shadow: 0 1px 4px rgba(0,0,0,0.3);
+  }
+  .toggle-switch.on::after { left: 22px; }
+
+  /* ─── API SETUP ─── */
+  .api-setup {
+    background: var(--surface);
+    border: 1px solid var(--border-active);
+    border-radius: var(--radius);
+    padding: 20px;
+    margin-bottom: 12px;
+    box-shadow: 0 0 20px var(--accent-glow);
+  }
+  .api-title {
+    font-family: var(--font-head);
+    font-weight: 700;
+    font-size: 15px;
+    margin-bottom: 6px;
+    color: var(--text);
+  }
+  .api-sub {
+    font-size: 12px;
+    color: var(--text3);
+    margin-bottom: 14px;
+    line-height: 1.5;
+  }
+  .api-input-wrap {
+    display: flex;
+    gap: 8px;
+  }
+  .api-input {
+    flex: 1;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    padding: 10px 12px;
+    outline: none;
+    transition: var(--transition);
+  }
+  .api-input:focus { border-color: var(--accent); }
+  .btn-save-api {
+    background: var(--accent);
+    border: none;
+    border-radius: var(--radius-sm);
+    color: #fff;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    padding: 10px 16px;
+    cursor: pointer;
+    transition: var(--transition);
+    white-space: nowrap;
+  }
+  .btn-save-api:hover { background: #7a55ef; }
+
+  /* ─── TOAST ─── */
+  .toast-container {
+    position: fixed;
+    top: 16px; left: 50%;
+    transform: translateX(-50%);
+    z-index: 2000;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    pointer-events: none;
+    width: calc(100% - 32px);
+    max-width: 400px;
+  }
+  .toast {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 12px 16px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    box-shadow: 0 8px 30px rgba(0,0,0,0.4);
+    animation: slideDown 0.3s ease, fadeOut 0.3s ease 2.7s forwards;
+    pointer-events: auto;
+  }
+  @keyframes slideDown { from { opacity:0; transform: translateY(-20px); } to { opacity:1; transform: translateY(0); } }
+  @keyframes fadeOut { to { opacity:0; transform: translateY(-10px); } }
+  .toast.success { border-color: var(--success); }
+  .toast.error { border-color: var(--error); }
+  .toast.info { border-color: var(--accent); }
+  .toast-icon { font-size: 18px; flex-shrink: 0; }
+  .toast-msg { font-size: 13px; color: var(--text); flex: 1; }
+
+  /* ─── BOTTOM NAV ─── */
+  .bottom-nav {
+    position: fixed;
+    bottom: 0; left: 50%;
+    transform: translateX(-50%);
+    width: 100%;
+    max-width: 480px;
+    background: rgba(9,9,15,0.92);
+    backdrop-filter: blur(20px);
+    border-top: 1px solid var(--border);
+    display: flex;
+    padding: 8px 0 calc(8px + env(safe-area-inset-bottom));
+    z-index: 200;
+  }
+  .nav-btn {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 3px;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    padding: 6px;
+    transition: var(--transition);
+    position: relative;
+  }
+  .nav-icon { font-size: 22px; transition: var(--transition); }
+  .nav-label { font-size: 10px; color: var(--text3); transition: var(--transition); letter-spacing: 0.5px; }
+  .nav-btn.active .nav-label { color: var(--accent); }
+  .nav-btn.active .nav-icon { transform: translateY(-2px); filter: drop-shadow(0 0 6px var(--accent)); }
+  .nav-indicator {
+    position: absolute;
+    top: 0; left: 50%;
+    transform: translateX(-50%);
+    width: 20px; height: 2px;
+    background: var(--accent);
+    border-radius: 0 0 2px 2px;
+    opacity: 0;
+    transition: var(--transition);
+  }
+  .nav-btn.active .nav-indicator { opacity: 1; }
+  .nav-badge {
+    position: absolute;
+    top: 4px; right: calc(50% - 16px);
+    background: var(--accent2);
+    border-radius: 50%;
+    width: 16px; height: 16px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 10px;
+    color: #fff;
+    font-weight: 700;
+  }
+
+  /* ─── PROMPT TAGS ─── */
+  .quick-prompts {
+    display: flex;
+    gap: 6px;
+    overflow-x: auto;
+    scrollbar-width: none;
+    padding-bottom: 2px;
+    margin-bottom: 10px;
+  }
+  .quick-prompts::-webkit-scrollbar { display: none; }
+  .quick-tag {
+    flex-shrink: 0;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    color: var(--text2);
+    font-size: 11px;
+    padding: 5px 10px;
+    cursor: pointer;
+    transition: var(--transition);
+    white-space: nowrap;
+  }
+  .quick-tag:hover { border-color: var(--accent); color: var(--accent); }
+
+  /* ─── SEED ─── */
+  .seed-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+  .seed-input {
+    flex: 1;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    padding: 8px 12px;
+    outline: none;
+    transition: var(--transition);
+  }
+  .seed-input:focus { border-color: var(--accent); }
+  .btn-random-seed {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text2);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    padding: 8px 10px;
+    cursor: pointer;
+    transition: var(--transition);
+    white-space: nowrap;
+  }
+  .btn-random-seed:hover { border-color: var(--accent); color: var(--accent); }
+
+  /* ─── STATS ─── */
+  .stats-row {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+    margin-bottom: 12px;
+  }
+  .stat-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 14px 10px;
+    text-align: center;
+  }
+  .stat-val {
+    font-family: var(--font-head);
+    font-weight: 800;
+    font-size: 22px;
+    background: linear-gradient(135deg, var(--accent), var(--accent3));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    margin-bottom: 4px;
+  }
+  .stat-label { font-size: 10px; color: var(--text3); letter-spacing: 0.5px; }
+
+  /* ─── PROMPT ENHANCER MODAL ─── */
+  .enhance-loader {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 12px; color: var(--text3); margin-top: 8px;
+  }
+  .dots { display: inline-flex; gap: 3px; }
+  .dot { width: 4px; height: 4px; background: var(--accent); border-radius: 50%; animation: bounce 1.2s infinite; }
+  .dot:nth-child(2) { animation-delay: 0.2s; }
+  .dot:nth-child(3) { animation-delay: 0.4s; }
+  @keyframes bounce { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-5px)} }
+
+  /* scrollbar */
+  ::-webkit-scrollbar { width: 4px; height: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+  /* ─── WATERMARK ─── */
+  .watermark {
+    text-align: center;
+    font-size: 10px;
+    color: var(--text3);
+    padding: 12px;
+    letter-spacing: 1px;
+  }
+</style>
+</head>
+<body>
+
+<div class="ambient ambient-1"></div>
+<div class="ambient ambient-2"></div>
+<div class="ambient ambient-3"></div>
+
+<div id="app">
+
+  <!-- HEADER -->
+  <div class="header">
+    <div class="logo">
+      <div class="logo-icon">✦</div>
+      <span class="logo-text">AI Studio</span>
+    </div>
+    <div class="credits-badge">
+      <div class="credits-dot"></div>
+      <span id="creditsLabel">Online</span>
+    </div>
+  </div>
+
+  <!-- TABS -->
+  <div class="tabs" id="mainTabs">
+    <button class="tab active" data-tab="generate">✦ Generate</button>
+    <button class="tab" data-tab="history">🕘 History</button>
+    <button class="tab" data-tab="settings">⚙ Settings</button>
+  </div>
+
+  <!-- ═══════════════ GENERATE SECTION ═══════════════ -->
+  <div class="section active" id="tab-generate">
+
+    <!-- QUICK PROMPTS -->
+    <div class="quick-prompts">
+      <div class="quick-tag" onclick="appendPrompt('a cyberpunk city at night')">🌃 Cyberpunk</div>
+      <div class="quick-tag" onclick="appendPrompt('an enchanted forest with magical creatures')">🌿 Fantasy</div>
+      <div class="quick-tag" onclick="appendPrompt('a futuristic space station')">🚀 Sci-Fi</div>
+      <div class="quick-tag" onclick="appendPrompt('anime style portrait, detailed')">🎌 Anime</div>
+      <div class="quick-tag" onclick="appendPrompt('photorealistic portrait, studio lighting')">📸 Realism</div>
+      <div class="quick-tag" onclick="appendPrompt('abstract art, colorful, expressive')">🎨 Abstract</div>
+      <div class="quick-tag" onclick="appendPrompt('oil painting, impressionist style')">🖼️ Oil Paint</div>
+      <div class="quick-tag" onclick="appendPrompt('minimalist flat design illustration')">◻ Minimal</div>
+    </div>
+
+    <!-- PROMPT CARD -->
+    <div class="gen-card">
+      <div class="card-label">Prompt</div>
+      <div class="prompt-wrap">
+        <textarea class="prompt-textarea" id="promptInput" placeholder="Describe your image... Be creative and detailed." rows="4" maxlength="800"></textarea>
+        <div style="text-align:right; font-size:10px; color:var(--text3); margin-top:4px;">
+          <span id="charCount">0</span>/800
+        </div>
+      </div>
+      <div class="prompt-actions">
+        <button class="btn-enhance" onclick="enhancePrompt()">✨ AI Enhance</button>
+        <button class="btn-clear" onclick="clearPrompt()">✕</button>
+      </div>
+      <div class="enhance-loader" id="enhanceLoader" style="display:none;">
+        <div class="dots"><div class="dot"></div><div class="dot"></div><div class="dot"></div></div>
+        Enhancing prompt...
+      </div>
+    </div>
+
+    <!-- IMAGE UPLOAD CARD -->
+    <div class="gen-card">
+      <div class="card-label">Reference Image (optional)</div>
+      <div id="uploadZone" class="upload-zone">
+        <input type="file" id="imgUpload" accept="image/*" onchange="handleImageUpload(event)"/>
+        <div class="upload-icon">🖼️</div>
+        <div class="upload-text">Upload photo for img2img<br/><span style="color:var(--text3); font-size:11px;">Tap to browse · max 10MB</span></div>
+      </div>
+      <div id="uploadPreview" class="upload-preview" style="display:none;">
+        <img id="previewImg" src="" alt="preview"/>
+        <button class="remove-img" onclick="removeImage()">✕</button>
+      </div>
+      <div id="img2imgStrength" style="display:none; margin-top:12px;">
+        <div class="param-row">
+          <span class="param-label">Strength</span>
+          <input type="range" class="slider" id="strengthSlider" min="0.1" max="1" step="0.05" value="0.75" oninput="updateVal('strengthVal', this.value)"/>
+          <span class="param-val" id="strengthVal">0.75</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- STYLES CARD -->
+    <div class="gen-card">
+      <div class="card-label">Style Preset</div>
+      <div class="styles-grid" id="stylesGrid">
+        <div class="style-item selected" data-style="none" onclick="selectStyle(this)">
+          <div class="style-emoji">🎲</div>
+          <div class="style-name">None</div>
+        </div>
+        <div class="style-item" data-style="photorealistic" onclick="selectStyle(this)">
+          <div class="style-emoji">📸</div>
+          <div class="style-name">Photo</div>
+        </div>
+        <div class="style-item" data-style="anime" onclick="selectStyle(this)">
+          <div class="style-emoji">🎌</div>
+          <div class="style-name">Anime</div>
+        </div>
+        <div class="style-item" data-style="oil painting" onclick="selectStyle(this)">
+          <div class="style-emoji">🖼️</div>
+          <div class="style-name">Oil Paint</div>
+        </div>
+        <div class="style-item" data-style="cyberpunk" onclick="selectStyle(this)">
+          <div class="style-emoji">🌃</div>
+          <div class="style-name">Cyberpunk</div>
+        </div>
+        <div class="style-item" data-style="watercolor" onclick="selectStyle(this)">
+          <div class="style-emoji">💧</div>
+          <div class="style-name">Watercolor</div>
+        </div>
+        <div class="style-item" data-style="pixel art" onclick="selectStyle(this)">
+          <div class="style-emoji">👾</div>
+          <div class="style-name">Pixel Art</div>
+        </div>
+        <div class="style-item" data-style="3d render" onclick="selectStyle(this)">
+          <div class="style-emoji">🎮</div>
+          <div class="style-name">3D Render</div>
+        </div>
+        <div class="style-item" data-style="comic book" onclick="selectStyle(this)">
+          <div class="style-emoji">💥</div>
+          <div class="style-name">Comic</div>
+        </div>
+        <div class="style-item" data-style="impressionist" onclick="selectStyle(this)">
+          <div class="style-emoji">🌻</div>
+          <div class="style-name">Impressionist</div>
+        </div>
+        <div class="style-item" data-style="dark fantasy" onclick="selectStyle(this)">
+          <div class="style-emoji">🐉</div>
+          <div class="style-name">Dark Fantasy</div>
+        </div>
+        <div class="style-item" data-style="minimalist" onclick="selectStyle(this)">
+          <div class="style-emoji">◻</div>
+          <div class="style-name">Minimal</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ADVANCED SETTINGS -->
+    <div class="gen-card">
+      <div class="settings-toggle" onclick="toggleAdvanced()">
+        <span>⚙ Advanced Settings</span>
+        <span class="toggle-arrow" id="advArrow">▾</span>
+      </div>
+      <div class="settings-body" id="advSettings">
+        <!-- MODEL -->
+        <div style="margin-bottom:14px;">
+          <div class="param-label" style="margin-bottom:8px;">Model</div>
+          <select class="model-select" id="modelSelect">
+            <option value="black-forest-labs/flux-schnell">⚡ FLUX Schnell (Fast)</option>
+            <option value="black-forest-labs/flux-dev" selected>🎨 FLUX Dev (Quality)</option>
+            <option value="black-forest-labs/flux-pro">👑 FLUX Pro (Best)</option>
+            <option value="stability-ai/sdxl">🖼 Stable Diffusion XL</option>
+            <option value="lucataco/dreamshaper-xl-turbo">✨ DreamShaper XL</option>
+          </select>
+        </div>
+
+        <!-- SIZE -->
+        <div style="margin-bottom:14px;">
+          <div class="param-label" style="margin-bottom:8px;">Image Size</div>
+          <div class="size-grid">
+            <button class="size-btn" data-w="512" data-h="512" onclick="selectSize(this)">512×512</button>
+            <button class="size-btn selected" data-w="768" data-h="768" onclick="selectSize(this)">768×768</button>
+            <button class="size-btn" data-w="1024" data-h="1024" onclick="selectSize(this)">1024×1024</button>
+            <button class="size-btn" data-w="768" data-h="1024" onclick="selectSize(this)">768×1024</button>
+            <button class="size-btn" data-w="1024" data-h="768" onclick="selectSize(this)">1024×768</button>
+            <button class="size-btn" data-w="1280" data-h="720" onclick="selectSize(this)">1280×720</button>
+          </div>
+        </div>
+
+        <!-- STEPS -->
+        <div class="param-row">
+          <span class="param-label">Steps</span>
+          <input type="range" class="slider" id="stepsSlider" min="1" max="50" step="1" value="28" oninput="updateVal('stepsVal', this.value)"/>
+          <span class="param-val" id="stepsVal">28</span>
+        </div>
+
+        <!-- GUIDANCE -->
+        <div class="param-row">
+          <span class="param-label">Guidance</span>
+          <input type="range" class="slider" id="guidanceSlider" min="1" max="20" step="0.5" value="7" oninput="updateVal('guidanceVal', this.value)"/>
+          <span class="param-val" id="guidanceVal">7</span>
+        </div>
+
+        <!-- SEED -->
+        <div style="margin-bottom:14px;">
+          <div class="param-label" style="margin-bottom:8px;">Seed</div>
+          <div class="seed-row">
+            <input type="number" class="seed-input" id="seedInput" placeholder="Random seed..." min="0" max="2147483647"/>
+            <button class="btn-random-seed" onclick="randomSeed()">🎲 Random</button>
+          </div>
+        </div>
+
+        <!-- NEGATIVE PROMPT -->
+        <div>
+          <div class="param-label" style="margin-bottom:8px;">Negative Prompt</div>
+          <textarea class="neg-textarea" id="negPrompt" placeholder="What to avoid: blurry, low quality, deformed...">blurry, low quality, deformed, ugly, watermark, text, bad anatomy</textarea>
+        </div>
+      </div>
+    </div>
+
+    <!-- GENERATE BUTTON -->
+    <div style="padding:0 0 12px;">
+      <button class="btn-generate" id="generateBtn" onclick="generateImage()">
+        <div class="btn-shimmer"></div>
+        ✦ Generate Image
+      </button>
+    </div>
+
+    <!-- PROGRESS -->
+    <div class="progress-card" id="progressCard">
+      <div class="progress-spinner">
+        <svg viewBox="0 0 56 56" width="56" height="56">
+          <circle cx="28" cy="28" r="22"/>
+        </svg>
+      </div>
+      <div class="progress-title" id="progressTitle">Generating...</div>
+      <div class="progress-sub" id="progressSub">Warming up the model</div>
+      <div class="progress-bar-wrap">
+        <div class="progress-bar" id="progressBar"></div>
+      </div>
+      <div class="progress-steps">
+        <span id="pStep1">⊙ Processing</span>
+        <span id="pStep2">◌ Rendering</span>
+        <span id="pStep3">◌ Upscaling</span>
+      </div>
+    </div>
+
+    <!-- RESULT -->
+    <div class="result-card" id="resultCard">
+      <div class="result-img-wrap">
+        <img class="result-img" id="resultImg" src="" alt="Generated"/>
+        <div class="result-img-overlay"></div>
+        <div class="result-meta">
+          <span class="result-badge" id="resultModelBadge">FLUX Dev</span>
+          <span class="result-badge" id="resultTimeBadge">--s</span>
+        </div>
+      </div>
+      <div class="result-actions">
+        <button class="result-btn download" onclick="downloadImage()">
+          <span class="result-btn-icon">⬇</span>
+          <span>Download</span>
+        </button>
+        <button class="result-btn share" onclick="shareToTelegram()">
+          <span class="result-btn-icon">✈</span>
+          <span>Share</span>
+        </button>
+        <button class="result-btn retry" onclick="regenerate()">
+          <span class="result-btn-icon">↻</span>
+          <span>Regenerate</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- VARIATIONS -->
+    <div class="variations-section" id="variationsSection">
+      <div class="variations-title">Variations</div>
+      <div class="variations-grid" id="variationsGrid"></div>
+    </div>
+
+    <div class="watermark">AI Studio · Powered by Replicate</div>
+  </div>
+
+  <!-- ═══════════════ HISTORY SECTION ═══════════════ -->
+  <div class="section" id="tab-history">
+    <div class="history-header">
+      <div class="history-title">Your Generations</div>
+      <button class="btn-clear-history" onclick="clearHistory()">Clear All</button>
+    </div>
+
+    <!-- STATS -->
+    <div class="stats-row">
+      <div class="stat-card">
+        <div class="stat-val" id="statTotal">0</div>
+        <div class="stat-label">Generated</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-val" id="statFavorites">0</div>
+        <div class="stat-label">Saved</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-val" id="statShared">0</div>
+        <div class="stat-label">Shared</div>
+      </div>
+    </div>
+
+    <div id="historyContent">
+      <div class="history-empty" id="historyEmpty">
+        <div class="history-empty-icon">🖼️</div>
+        <div class="history-empty-text">No generations yet.<br/>Create your first image!</div>
+      </div>
+      <div class="history-grid" id="historyGrid"></div>
+    </div>
+  </div>
+
+  <!-- ═══════════════ SETTINGS SECTION ═══════════════ -->
+  <div class="section" id="tab-settings">
+    <div class="settings-section">
+
+      <!-- API KEY -->
+      <div class="api-setup" id="apiSetupCard">
+        <div class="api-title">🔑 Replicate API Key</div>
+        <div class="api-sub">Enter your Replicate API token to start generating images. Get one at replicate.com</div>
+        <div class="api-input-wrap">
+          <input class="api-input" type="password" id="apiKeyInput" placeholder="r8_..." value=""/>
+          <button class="btn-save-api" onclick="saveApiKey()">Save</button>
+        </div>
+        <div style="margin-top:8px; font-size:11px; color:var(--text3);">Stored locally on your device only.</div>
+      </div>
+
+      <!-- GENERATION SETTINGS -->
+      <div class="settings-group">
+        <div class="settings-group-title">Generation</div>
+        <div class="settings-row">
+          <div>
+            <div class="settings-row-label">Auto-enhance prompts</div>
+            <div class="settings-row-sub">Use AI to improve your prompts</div>
+          </div>
+          <div class="toggle-switch on" id="toggleAutoEnhance" onclick="toggleSetting('autoEnhance')"></div>
+        </div>
+        <div class="settings-row">
+          <div>
+            <div class="settings-row-label">Generate variations</div>
+            <div class="settings-row-sub">Create 4 variations automatically</div>
+          </div>
+          <div class="toggle-switch" id="toggleVariations" onclick="toggleSetting('genVariations')"></div>
+        </div>
+        <div class="settings-row">
+          <div>
+            <div class="settings-row-label">Save to history</div>
+            <div class="settings-row-sub">Keep a record of all generations</div>
+          </div>
+          <div class="toggle-switch on" id="toggleSaveHistory" onclick="toggleSetting('saveHistory')"></div>
+        </div>
+        <div class="settings-row">
+          <div>
+            <div class="settings-row-label">Watermark</div>
+            <div class="settings-row-sub">Add AI Studio watermark</div>
+          </div>
+          <div class="toggle-switch" id="toggleWatermark" onclick="toggleSetting('addWatermark')"></div>
+        </div>
+      </div>
+
+      <!-- DEFAULT PARAMS -->
+      <div class="settings-group">
+        <div class="settings-group-title">Defaults</div>
+        <div class="settings-row">
+          <div>
+            <div class="settings-row-label">Default model</div>
+            <div class="settings-row-sub">Used for new generations</div>
+          </div>
+          <div class="settings-row-val" id="settingDefaultModel">FLUX Dev</div>
+        </div>
+        <div class="settings-row">
+          <div>
+            <div class="settings-row-label">Image quality</div>
+          </div>
+          <div class="settings-row-val">High</div>
+        </div>
+        <div class="settings-row">
+          <div>
+            <div class="settings-row-label">Safe mode</div>
+            <div class="settings-row-sub">Filter explicit content</div>
+          </div>
+          <div class="toggle-switch on" id="toggleSafe" onclick="toggleSetting('safeMode')"></div>
+        </div>
+      </div>
+
+      <!-- INFO -->
+      <div class="settings-group">
+        <div class="settings-group-title">Info</div>
+        <div class="settings-row">
+          <div class="settings-row-label">Version</div>
+          <div class="settings-row-val">2.0.0</div>
+        </div>
+        <div class="settings-row">
+          <div class="settings-row-label">Telegram User</div>
+          <div class="settings-row-val" id="settingTgUser">—</div>
+        </div>
+        <div class="settings-row" style="cursor:pointer;" onclick="resetApp()">
+          <div class="settings-row-label" style="color:var(--error);">Reset All Data</div>
+          <div style="color:var(--text3); font-size:12px;">→</div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+</div>
+
+<!-- MODAL -->
+<div class="modal-overlay" id="modalOverlay" onclick="closeModal(event)">
+  <div style="position:relative; width:100%; max-width:400px;">
+    <button class="modal-close" onclick="closeModal()">✕</button>
+    <div class="modal">
+      <img class="modal-img-full" id="modalImg" src="" alt=""/>
+      <div class="modal-info">
+        <div class="modal-prompt" id="modalPrompt"></div>
+        <div class="modal-meta" id="modalMeta"></div>
+        <div class="modal-actions">
+          <button class="modal-btn" onclick="downloadFromModal()">⬇ Download</button>
+          <button class="modal-btn" onclick="shareFromModal()">✈ Share</button>
+          <button class="modal-btn" onclick="useAsReference()">🖼 Use as Ref</button>
+          <button class="modal-btn primary" onclick="usePromptFromModal()">✦ Use Prompt</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- TOAST CONTAINER -->
+<div class="toast-container" id="toastContainer"></div>
+
+<!-- BOTTOM NAV -->
+<div class="bottom-nav">
+  <button class="nav-btn active" id="nav-generate" onclick="switchTab('generate')">
+    <div class="nav-indicator"></div>
+    <div class="nav-icon">✦</div>
+    <div class="nav-label">Generate</div>
+  </button>
+  <button class="nav-btn" id="nav-history" onclick="switchTab('history')">
+    <div class="nav-indicator"></div>
+    <div class="nav-icon">🕘</div>
+    <div class="nav-label">History</div>
+    <div class="nav-badge" id="historyBadge" style="display:none;">0</div>
+  </button>
+  <button class="nav-btn" id="nav-settings" onclick="switchTab('settings')">
+    <div class="nav-indicator"></div>
+    <div class="nav-icon">⚙</div>
+    <div class="nav-label">Settings</div>
+  </button>
+</div>
+
+<script>
+// ══════════════════════════════════════════════════
+//  STATE
+// ══════════════════════════════════════════════════
+const STATE = {
+  apiKey: '',
+  selectedStyle: 'none',
+  selectedWidth: 768,
+  selectedHeight: 768,
+  uploadedImageBase64: null,
+  uploadedImageUrl: null,
+  currentResultUrl: null,
+  currentPrompt: '',
+  currentModel: 'black-forest-labs/flux-dev',
+  history: [],
+  stats: { total: 0, favorites: 0, shared: 0 },
+  settings: {
+    autoEnhance: true,
+    genVariations: false,
+    saveHistory: true,
+    addWatermark: false,
+    safeMode: true,
+  },
+  generating: false,
+  modalItem: null,
+  generationStart: 0,
+};
+
+// ══════════════════════════════════════════════════
+//  INIT
+// ══════════════════════════════════════════════════
+function init() {
+  // Telegram Web App
+  if (window.Telegram && window.Telegram.WebApp) {
+    const tg = window.Telegram.WebApp;
+    tg.ready();
+    tg.expand();
+    if (tg.initDataUnsafe?.user) {
+      const user = tg.initDataUnsafe.user;
+      document.getElementById('settingTgUser').textContent =
+        `@${user.username || user.first_name}`;
+    }
+  }
+
+  // Load saved data
+  loadFromStorage();
+  renderHistory();
+  updateStats();
+  updateCharCount();
+
+  // Prompt input listener
+  document.getElementById('promptInput').addEventListener('input', updateCharCount);
+
+  // Check if API key is set
+  if (STATE.apiKey) {
+    document.getElementById('creditsLabel').textContent = 'Ready';
+  }
+}
+
+function loadFromStorage() {
+  try {
+    const saved = localStorage.getItem('ai_studio_state');
+    if (saved) {
+      const data = JSON.parse(saved);
+      if (data.apiKey) STATE.apiKey = data.apiKey;
+      if (data.history) STATE.history = data.history;
+      if (data.stats) STATE.stats = data.stats;
+      if (data.settings) STATE.settings = { ...STATE.settings, ...data.settings };
+      if (STATE.apiKey) document.getElementById('apiKeyInput').value = STATE.apiKey;
+
+      // Apply settings toggles
+      Object.entries(STATE.settings).forEach(([key, val]) => {
+        const el = document.getElementById(`toggle${cap(key)}`);
+        if (el) { el.classList.toggle('on', val); }
+      });
+    }
+  } catch(e) {}
+}
+
+function saveToStorage() {
+  try {
+    localStorage.setItem('ai_studio_state', JSON.stringify({
+      apiKey: STATE.apiKey,
+      history: STATE.history.slice(0, 50), // keep last 50
+      stats: STATE.stats,
+      settings: STATE.settings,
+    }));
+  } catch(e) {}
+}
+
+function cap(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
+
+// ══════════════════════════════════════════════════
+//  TABS
+// ══════════════════════════════════════════════════
+function switchTab(tab) {
+  document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+
+  document.getElementById(`tab-${tab}`).classList.add('active');
+  document.querySelector(`[data-tab="${tab}"]`)?.classList.add('active');
+  document.getElementById(`nav-${tab}`)?.classList.add('active');
+
+  if (tab === 'history') { renderHistory(); updateStats(); }
+}
+
+// ══════════════════════════════════════════════════
+//  PROMPT
+// ══════════════════════════════════════════════════
+function updateCharCount() {
+  const v = document.getElementById('promptInput').value.length;
+  document.getElementById('charCount').textContent = v;
+}
+
+function appendPrompt(text) {
+  const el = document.getElementById('promptInput');
+  const cur = el.value.trim();
+  el.value = cur ? `${cur}, ${text}` : text;
+  updateCharCount();
+  el.focus();
+  showToast('info', '💡', `Added: "${text}"`);
+}
+
+function clearPrompt() {
+  document.getElementById('promptInput').value = '';
+  updateCharCount();
+}
+
+async function enhancePrompt() {
+  const prompt = document.getElementById('promptInput').value.trim();
+  if (!prompt) { showToast('error', '✕', 'Write a prompt first!'); return; }
+
+  document.getElementById('enhanceLoader').style.display = 'flex';
+  document.getElementById('promptInput').disabled = true;
+
+  try {
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 300,
+        messages: [{
+          role: 'user',
+          content: `You are an expert AI image prompt engineer. Enhance this image generation prompt to be more detailed, vivid, and effective for AI image generation. Add artistic style details, lighting, composition, mood, and technical quality terms. Keep it under 200 words. Return ONLY the enhanced prompt, nothing else.\n\nOriginal prompt: "${prompt}"`
+        }]
+      })
+    });
+    const data = await res.json();
+    const enhanced = data.content?.[0]?.text?.trim();
+    if (enhanced) {
+      document.getElementById('promptInput').value = enhanced;
+      updateCharCount();
+      showToast('success', '✨', 'Prompt enhanced!');
+    }
+  } catch(e) {
+    showToast('error', '✕', 'Enhancement failed');
+  }
+
+  document.getElementById('enhanceLoader').style.display = 'none';
+  document.getElementById('promptInput').disabled = false;
+}
+
+// ══════════════════════════════════════════════════
+//  IMAGE UPLOAD
+// ══════════════════════════════════════════════════
+function handleImageUpload(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  if (file.size > 10 * 1024 * 1024) {
+    showToast('error', '✕', 'Image too large (max 10MB)');
+    return;
+  }
+
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    const base64 = e.target.result;
+    STATE.uploadedImageBase64 = base64;
+    document.getElementById('previewImg').src = base64;
+    document.getElementById('uploadZone').style.display = 'none';
+    document.getElementById('uploadPreview').style.display = 'block';
+    document.getElementById('img2imgStrength').style.display = 'block';
+    showToast('success', '🖼️', 'Image uploaded!');
+  };
+  reader.readAsDataURL(file);
+}
+
+function removeImage() {
+  STATE.uploadedImageBase64 = null;
+  STATE.uploadedImageUrl = null;
+  document.getElementById('uploadZone').style.display = 'block';
+  document.getElementById('uploadPreview').style.display = 'none';
+  document.getElementById('img2imgStrength').style.display = 'none';
+  document.getElementById('imgUpload').value = '';
+}
+
+// ══════════════════════════════════════════════════
+//  STYLES
+// ══════════════════════════════════════════════════
+function selectStyle(el) {
+  document.querySelectorAll('.style-item').forEach(i => i.classList.remove('selected'));
+  el.classList.add('selected');
+  STATE.selectedStyle = el.dataset.style;
+}
+
+const STYLE_SUFFIXES = {
+  'none': '',
+  'photorealistic': ', photorealistic, ultra-detailed, 8k uhd, dslr, high quality',
+  'anime': ', anime style, detailed, vibrant colors, Studio Ghibli, makoto shinkai',
+  'oil painting': ', oil painting, detailed brushwork, canvas texture, museum quality',
+  'cyberpunk': ', cyberpunk aesthetic, neon lights, dark atmosphere, futuristic city',
+  'watercolor': ', watercolor painting, soft edges, flowing colors, artistic',
+  'pixel art': ', pixel art, 8-bit style, retro game aesthetic',
+  '3d render': ', 3D render, octane render, volumetric lighting, photorealistic',
+  'comic book': ', comic book style, bold lines, bright colors, action',
+  'impressionist': ', impressionist painting, monet style, soft brushstrokes',
+  'dark fantasy': ', dark fantasy art, dramatic lighting, epic, detailed',
+  'minimalist': ', minimalist, clean lines, simple shapes, flat design',
+};
+
+// ══════════════════════════════════════════════════
+//  ADVANCED SETTINGS
+// ══════════════════════════════════════════════════
+function toggleAdvanced() {
+  const body = document.getElementById('advSettings');
+  const arrow = document.getElementById('advArrow');
+  body.classList.toggle('open');
+  arrow.classList.toggle('open');
+}
+
+function updateVal(id, val) {
+  document.getElementById(id).textContent = val;
+}
+
+function selectSize(el) {
+  document.querySelectorAll('.size-btn').forEach(b => b.classList.remove('selected'));
+  el.classList.add('selected');
+  STATE.selectedWidth = parseInt(el.dataset.w);
+  STATE.selectedHeight = parseInt(el.dataset.h);
+}
+
+function randomSeed() {
+  const seed = Math.floor(Math.random() * 2147483647);
+  document.getElementById('seedInput').value = seed;
+}
+
+// ══════════════════════════════════════════════════
+//  GENERATE
+// ══════════════════════════════════════════════════
+async function generateImage() {
+  if (STATE.generating) return;
+
+  const prompt = document.getElementById('promptInput').value.trim();
+  if (!prompt) {
+    showToast('error', '✕', 'Please enter a prompt!');
+    document.getElementById('promptInput').focus();
+    return;
+  }
+
+  const apiKey = STATE.apiKey || document.getElementById('apiKeyInput').value.trim();
+  if (!apiKey) {
+    showToast('error', '🔑', 'Add your API key in Settings!');
+    switchTab('settings');
+    return;
+  }
+
+  STATE.generating = true;
+  STATE.currentPrompt = prompt;
+  STATE.generationStart = Date.now();
+
+  const btn = document.getElementById('generateBtn');
+  btn.disabled = true;
+  btn.innerHTML = '<div class="btn-shimmer"></div>⏳ Generating...';
+
+  document.getElementById('resultCard').classList.remove('visible');
+  document.getElementById('variationsSection').classList.remove('visible');
+  showProgress(true);
+
+  // Build final prompt with style
+  const styleSuffix = STYLE_SUFFIXES[STATE.selectedStyle] || '';
+  const finalPrompt = prompt + styleSuffix;
+  const negPrompt = document.getElementById('negPrompt').value.trim();
+  const model = document.getElementById('modelSelect').value;
+  const steps = parseInt(document.getElementById('stepsSlider').value);
+  const guidance = parseFloat(document.getElementById('guidanceSlider').value);
+  const seedVal = document.getElementById('seedInput').value;
+  const seed = seedVal ? parseInt(seedVal) : Math.floor(Math.random() * 2147483647);
+
+  STATE.currentModel = model;
+
+  try {
+    updateProgress(10, 'Sending to Replicate...', 'Connecting to API');
+    
+    // Build input object
+    const input = {
+      prompt: finalPrompt,
+      width: STATE.selectedWidth,
+      height: STATE.selectedHeight,
+      num_inference_steps: steps,
+      guidance_scale: guidance,
+      seed: seed,
+    };
+
+    if (negPrompt) input.negative_prompt = negPrompt;
+
+    // img2img
+    if (STATE.uploadedImageBase64) {
+      input.image = STATE.uploadedImageBase64;
+      input.strength = parseFloat(document.getElementById('strengthSlider').value);
+    }
+
+    // Start prediction
+    const predRes = await fetch('https://api.replicate.com/v1/models/' + model + '/predictions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+        'Prefer': 'wait=30'
+      },
+      body: JSON.stringify({ input })
+    });
+
+    if (!predRes.ok) {
+      const err = await predRes.json();
+      throw new Error(err.detail || `API Error ${predRes.status}`);
+    }
+
+    const pred = await predRes.json();
+    updateProgress(30, 'Model started...', 'AI is drawing');
+
+    // Poll for result
+    const imageUrl = await pollPrediction(pred.id || pred.urls?.get, apiKey);
+    const elapsed = ((Date.now() - STATE.generationStart) / 1000).toFixed(1);
+
+    updateProgress(100, 'Done!', 'Image ready');
+
+    // Show result
+    setTimeout(() => {
+      showProgress(false);
+      showResult(imageUrl, elapsed);
+
+      // Save to history
+      if (STATE.settings.saveHistory) {
+        addToHistory({
+          id: Date.now(),
+          imageUrl,
+          prompt,
+          style: STATE.selectedStyle,
+          model: model.split('/').pop(),
+          width: STATE.selectedWidth,
+          height: STATE.selectedHeight,
+          seed,
+          time: elapsed,
+          date: new Date().toISOString(),
+        });
+      }
+
+      // Variations
+      if (STATE.settings.genVariations) {
+        generateVariations(finalPrompt, apiKey, model, steps, guidance, input);
+      }
+
+      STATE.stats.total++;
+      updateStats();
+      saveToStorage();
+
+    }, 500);
+
+  } catch(e) {
+    showProgress(false);
+    showToast('error', '✕', `Error: ${e.message}`);
+    console.error(e);
+  }
+
+  STATE.generating = false;
+  btn.disabled = false;
+  btn.innerHTML = '<div class="btn-shimmer"></div>✦ Generate Image';
+}
+
+async function pollPrediction(predIdOrUrl, apiKey, maxAttempts = 120) {
+  // If pred already done (prefer=wait returned output)
+  let url = predIdOrUrl;
+  if (!url.startsWith('http')) {
+    url = `https://api.replicate.com/v1/predictions/${predIdOrUrl}`;
+  }
+
+  for (let i = 0; i < maxAttempts; i++) {
+    const progressPct = 30 + Math.min(60, i * 2);
+    updateProgress(progressPct, 'Rendering...', `Step ${i + 1}/${maxAttempts}`);
+
+    if (i >= 5) {
+      document.getElementById('pStep2').textContent = '⊙ Rendering';
+      document.getElementById('pStep2').classList.add('done');
+    }
+
+    const res = await fetch(url, {
+      headers: { 'Authorization': `Bearer ${apiKey}` }
+    });
+    const data = await res.json();
+
+    if (data.status === 'succeeded') {
+      const output = data.output;
+      if (Array.isArray(output)) return output[0];
+      if (typeof output === 'string') return output;
+    }
+    if (data.status === 'failed') {
+      throw new Error(data.error || 'Generation failed');
+    }
+    if (data.status === 'canceled') {
+      throw new Error('Generation was canceled');
+    }
+
+    // If it already has output in first response
+    if (data.output) {
+      const output = data.output;
+      if (Array.isArray(output) && output[0]) return output[0];
+      if (typeof output === 'string') return output;
+    }
+
+    await sleep(1500);
+  }
+  throw new Error('Timeout: Generation took too long');
+}
+
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+// ══════════════════════════════════════════════════
+//  PROGRESS
+// ══════════════════════════════════════════════════
+function showProgress(show) {
+  document.getElementById('progressCard').classList.toggle('visible', show);
+  if (show) {
+    document.getElementById('progressBar').style.width = '0%';
+    document.getElementById('pStep1').className = '';
+    document.getElementById('pStep2').className = '';
+    document.getElementById('pStep3').className = '';
+    document.getElementById('pStep1').textContent = '⊙ Processing';
+    document.getElementById('pStep2').textContent = '◌ Rendering';
+    document.getElementById('pStep3').textContent = '◌ Upscaling';
+  }
+}
+
+function updateProgress(pct, title, sub) {
+  document.getElementById('progressBar').style.width = `${pct}%`;
+  document.getElementById('progressTitle').textContent = title;
+  document.getElementById('progressSub').textContent = sub;
+
+  if (pct >= 30) {
+    document.getElementById('pStep1').textContent = '✓ Processing';
+    document.getElementById('pStep1').classList.add('done');
+  }
+  if (pct >= 70) {
+    document.getElementById('pStep2').textContent = '✓ Rendering';
+    document.getElementById('pStep2').classList.add('done');
+    document.getElementById('pStep3').textContent = '⊙ Upscaling';
+  }
+  if (pct >= 95) {
+    document.getElementById('pStep3').textContent = '✓ Upscaling';
+    document.getElementById('pStep3').classList.add('done');
+  }
+}
+
+// ══════════════════════════════════════════════════
+//  RESULT
+// ══════════════════════════════════════════════════
+function showResult(url, elapsed) {
+  STATE.currentResultUrl = url;
+  const img = document.getElementById('resultImg');
+  img.src = url;
+  img.onload = () => {
+    document.getElementById('resultCard').classList.add('visible');
+    document.getElementById('resultModelBadge').textContent = STATE.currentModel.split('/').pop();
+    document.getElementById('resultTimeBadge').textContent = `${elapsed}s`;
+    if (window.Telegram?.WebApp) {
+      window.Telegram.WebApp.HapticFeedback.notificationOccurred('success');
+    }
+    showToast('success', '✅', 'Image generated!');
+  };
+}
+
+async function downloadImage() {
+  if (!STATE.currentResultUrl) return;
+  try {
+    const res = await fetch(STATE.currentResultUrl);
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `ai-studio-${Date.now()}.png`;
+    a.click();
+    URL.revokeObjectURL(url);
+    STATE.stats.favorites++;
+    updateStats();
+    saveToStorage();
+    showToast('success', '⬇', 'Image downloaded!');
+  } catch(e) {
+    // Fallback: open in new tab
+    window.open(STATE.currentResultUrl, '_blank');
+    showToast('info', '🔗', 'Opened in new tab');
+  }
+}
+
+function shareToTelegram() {
+  if (!STATE.currentResultUrl) return;
+
+  const tg = window.Telegram?.WebApp;
+  if (tg) {
+    try {
+      // Try native share
+      tg.shareToStory?.(STATE.currentResultUrl);
+    } catch(e) {}
+
+    const prompt = STATE.currentPrompt;
+    const text = `✦ AI Generated Image\n\n"${prompt.substring(0, 100)}${prompt.length > 100 ? '...' : ''}"\n\n🔗 ${STATE.currentResultUrl}`;
+    tg.switchInlineQuery?.(text);
+  }
+
+  // Fallback: copy link
+  copyToClipboard(STATE.currentResultUrl);
+  showToast('success', '✈', 'Link copied! Share anywhere.');
+  STATE.stats.shared++;
+  updateStats();
+  saveToStorage();
+}
+
+function regenerate() {
+  generateImage();
+}
+
+// ══════════════════════════════════════════════════
+//  VARIATIONS
+// ══════════════════════════════════════════════════
+async function generateVariations(prompt, apiKey, model, steps, guidance, baseInput) {
+  const section = document.getElementById('variationsSection');
+  const grid = document.getElementById('variationsGrid');
+  section.classList.add('visible');
+  grid.innerHTML = '';
+
+  for (let i = 0; i < 4; i++) {
+    const el = document.createElement('div');
+    el.className = 'variation-thumb loading';
+    el.innerHTML = '⏳';
+    el.dataset.index = i;
+    grid.appendChild(el);
+  }
+
+  for (let i = 0; i < 4; i++) {
+    try {
+      const seed = Math.floor(Math.random() * 2147483647);
+      const input = { ...baseInput, seed, num_inference_steps: Math.max(10, steps - 5) };
+      
+      const res = await fetch('https://api.replicate.com/v1/models/' + model + '/predictions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+          'Prefer': 'wait=60'
+        },
+        body: JSON.stringify({ input })
+      });
+      
+      if (!res.ok) continue;
+      const pred = await res.json();
+      const url = await pollPrediction(pred.id || pred.urls?.get, apiKey, 40);
+
+      const el = grid.children[i];
+      el.className = 'variation-thumb';
+      el.innerHTML = `<img src="${url}" alt="Variation ${i+1}"/>`;
+      el.onclick = () => selectVariation(url, el);
+    } catch(e) {
+      const el = grid.children[i];
+      el.innerHTML = '✕';
+      el.style.color = 'var(--error)';
+    }
+  }
+}
+
+function selectVariation(url, el) {
+  document.querySelectorAll('.variation-thumb').forEach(t => t.classList.remove('selected'));
+  el.classList.add('selected');
+  STATE.currentResultUrl = url;
+  document.getElementById('resultImg').src = url;
+  showToast('info', '✦', 'Variation selected');
+}
+
+// ══════════════════════════════════════════════════
+//  HISTORY
+// ══════════════════════════════════════════════════
+function addToHistory(item) {
+  STATE.history.unshift(item);
+  if (STATE.history.length > 50) STATE.history.pop();
+  renderHistory();
+  updateStats();
+  updateHistoryBadge();
+}
+
+function renderHistory() {
+  const grid = document.getElementById('historyGrid');
+  const empty = document.getElementById('historyEmpty');
+  const items = STATE.history;
+
+  if (!items.length) {
+    empty.style.display = 'block';
+    grid.style.display = 'none';
+    return;
+  }
+
+  empty.style.display = 'none';
+  grid.style.display = 'grid';
+  grid.innerHTML = '';
+
+  items.forEach((item, idx) => {
+    const el = document.createElement('div');
+    el.className = 'history-item';
+    el.innerHTML = `
+      <div class="history-item-actions">
+        <button class="history-action-btn" onclick="event.stopPropagation(); downloadHistoryItem(${idx})" title="Download">⬇</button>
+        <button class="history-action-btn" onclick="event.stopPropagation(); deleteHistoryItem(${idx})" title="Delete">✕</button>
+      </div>
+      ${item.style && item.style !== 'none' ? `<div class="history-item-style">${item.style}</div>` : ''}
+      <img class="history-item-img" src="${item.imageUrl}" alt="gen" loading="lazy" onerror="this.style.display='none'"/>
+      <div class="history-item-info">
+        <div class="history-item-prompt">${item.prompt}</div>
+        <div class="history-item-time">${formatDate(item.date)} · ${item.time}s</div>
+      </div>
+    `;
+    el.onclick = () => openModal(item);
+    grid.appendChild(el);
+  });
+}
+
+function formatDate(iso) {
+  const d = new Date(iso);
+  const now = new Date();
+  const diff = now - d;
+  if (diff < 60000) return 'just now';
+  if (diff < 3600000) return `${Math.floor(diff/60000)}m ago`;
+  if (diff < 86400000) return `${Math.floor(diff/3600000)}h ago`;
+  return d.toLocaleDateString();
+}
+
+function clearHistory() {
+  if (!STATE.history.length) { showToast('info', 'ℹ', 'History is already empty'); return; }
+  if (confirm('Clear all history?')) {
+    STATE.history = [];
+    renderHistory();
+    updateStats();
+    updateHistoryBadge();
+    saveToStorage();
+    showToast('success', '🗑', 'History cleared');
+  }
+}
+
+function deleteHistoryItem(idx) {
+  STATE.history.splice(idx, 1);
+  renderHistory();
+  updateStats();
+  updateHistoryBadge();
+  saveToStorage();
+}
+
+async function downloadHistoryItem(idx) {
+  const item = STATE.history[idx];
+  if (!item) return;
+  STATE.currentResultUrl = item.imageUrl;
+  await downloadImage();
+}
+
+function updateHistoryBadge() {
+  const badge = document.getElementById('historyBadge');
+  const count = STATE.history.length;
+  if (count > 0) {
+    badge.style.display = 'flex';
+    badge.textContent = count > 99 ? '99+' : count;
+  } else {
+    badge.style.display = 'none';
+  }
+}
+
+// ══════════════════════════════════════════════════
+//  MODAL
+// ══════════════════════════════════════════════════
+function openModal(item) {
+  STATE.modalItem = item;
+  document.getElementById('modalImg').src = item.imageUrl;
+  document.getElementById('modalPrompt').textContent = item.prompt;
+
+  const meta = document.getElementById('modalMeta');
+  meta.innerHTML = `
+    <span class="modal-tag">📐 ${item.width}×${item.height}</span>
+    <span class="modal-tag">🤖 ${item.model}</span>
+    ${item.style && item.style !== 'none' ? `<span class="modal-tag">🎨 ${item.style}</span>` : ''}
+    <span class="modal-tag">⏱ ${item.time}s</span>
+    <span class="modal-tag">🌱 ${item.seed}</span>
+  `;
+  document.getElementById('modalOverlay').classList.add('open');
+}
+
+function closeModal(e) {
+  if (e && e.target !== document.getElementById('modalOverlay') && !e.target.classList.contains('modal-close')) return;
+  document.getElementById('modalOverlay').classList.remove('open');
+  STATE.modalItem = null;
+}
+
+function downloadFromModal() {
+  if (!STATE.modalItem) return;
+  STATE.currentResultUrl = STATE.modalItem.imageUrl;
+  downloadImage();
+}
+
+function shareFromModal() {
+  if (!STATE.modalItem) return;
+  STATE.currentResultUrl = STATE.modalItem.imageUrl;
+  STATE.currentPrompt = STATE.modalItem.prompt;
+  shareToTelegram();
+}
+
+function useAsReference() {
+  if (!STATE.modalItem) return;
+  // Simulate upload from URL
+  document.getElementById('previewImg').src = STATE.modalItem.imageUrl;
+  STATE.uploadedImageBase64 = STATE.modalItem.imageUrl;
+  document.getElementById('uploadZone').style.display = 'none';
+  document.getElementById('uploadPreview').style.display = 'block';
+  document.getElementById('img2imgStrength').style.display = 'block';
+  document.getElementById('modalOverlay').classList.remove('open');
+  switchTab('generate');
+  showToast('success', '🖼️', 'Used as reference image!');
+}
+
+function usePromptFromModal() {
+  if (!STATE.modalItem) return;
+  document.getElementById('promptInput').value = STATE.modalItem.prompt;
+  updateCharCount();
+  document.getElementById('modalOverlay').classList.remove('open');
+  switchTab('generate');
+  showToast('success', '✦', 'Prompt loaded!');
+}
+
+// ══════════════════════════════════════════════════
+//  STATS
+// ══════════════════════════════════════════════════
+function updateStats() {
+  STATE.stats.total = STATE.history.length;
+  document.getElementById('statTotal').textContent = STATE.stats.total;
+  document.getElementById('statFavorites').textContent = STATE.stats.favorites;
+  document.getElementById('statShared').textContent = STATE.stats.shared;
+}
+
+// ══════════════════════════════════════════════════
+//  SETTINGS
+// ══════════════════════════════════════════════════
+function saveApiKey() {
+  const key = document.getElementById('apiKeyInput').value.trim();
+  if (!key) { showToast('error', '✕', 'Enter an API key!'); return; }
+  if (!key.startsWith('r8_')) {
+    showToast('error', '✕', 'Invalid key format (should start with r8_)');
+    return;
+  }
+  STATE.apiKey = key;
+  document.getElementById('creditsLabel').textContent = 'Ready';
+  saveToStorage();
+  showToast('success', '✅', 'API key saved!');
+}
+
+function toggleSetting(key) {
+  STATE.settings[key] = !STATE.settings[key];
+  const el = document.getElementById(`toggle${cap(key)}`);
+  if (el) el.classList.toggle('on', STATE.settings[key]);
+  saveToStorage();
+}
+
+function resetApp() {
+  if (confirm('Reset all data? This will clear your history and settings.')) {
+    localStorage.removeItem('ai_studio_state');
+    location.reload();
+  }
+}
+
+// ══════════════════════════════════════════════════
+//  TOAST
+// ══════════════════════════════════════════════════
+function showToast(type, icon, msg) {
+  const container = document.getElementById('toastContainer');
+  const toast = document.createElement('div');
+  toast.className = `toast ${type}`;
+  toast.innerHTML = `<span class="toast-icon">${icon}</span><span class="toast-msg">${msg}</span>`;
+  container.appendChild(toast);
+  setTimeout(() => toast.remove(), 3200);
+}
+
+// ══════════════════════════════════════════════════
+//  CLIPBOARD
+// ══════════════════════════════════════════════════
+async function copyToClipboard(text) {
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch(e) {
+    const el = document.createElement('textarea');
+    el.value = text;
+    document.body.appendChild(el);
+    el.select();
+    document.execCommand('copy');
+    el.remove();
+  }
+}
+
+// ══════════════════════════════════════════════════
+//  DRAG & DROP
+// ══════════════════════════════════════════════════
+const uploadZone = document.getElementById('uploadZone');
+uploadZone.addEventListener('dragover', (e) => {
+  e.preventDefault();
+  uploadZone.classList.add('dragover');
+});
+uploadZone.addEventListener('dragleave', () => uploadZone.classList.remove('dragover'));
+uploadZone.addEventListener('drop', (e) => {
+  e.preventDefault();
+  uploadZone.classList.remove('dragover');
+  const file = e.dataTransfer?.files[0];
+  if (file && file.type.startsWith('image/')) {
+    const event = { target: { files: [file] } };
+    handleImageUpload(event);
+  }
+});
+
+// ══════════════════════════════════════════════════
+//  KEYBOARD
+// ══════════════════════════════════════════════════
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') closeModal();
+  if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') generateImage();
+});
+
+// ══════════════════════════════════════════════════
+//  START
+// ══════════════════════════════════════════════════
+init();
+</script>
+</body>
+</html>
